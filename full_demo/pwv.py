@@ -8,14 +8,14 @@ import os
 def filterWave(data, sample_rate=240.0, bpmin=0, bpmax=550, lowpass=True, highpass=True, verbose=False):
 
   # Change values ouside possible range to min and max pulse value
-  data = [bpmin if i <= bpmin else (bpmax if i > bpmax else i) for i in data]
+  data = np.array([bpmin if i <= bpmin else (bpmax if i > bpmax else i) for i in data])
 
   data = hp.filter_signal(data, cutoff=15, sample_rate=sample_rate, order=4, filtertype='lowpass') if lowpass else data
   data = hp.filter_signal(data, cutoff=.01, sample_rate=sample_rate, order=4, filtertype='highpass') if highpass else data
   wd, m = hp.process(hrdata=data, sample_rate=sample_rate, bpmmin=bpmin, bpmmax=bpmax)
   return wd, m
 
-def segmentWave(peakList, sample_rate=240.0):
+def segmentWave(peakList, sample_rate=240.0, verbose=False):
 
   rngs = []
   try:
@@ -32,7 +32,7 @@ def segmentWave(peakList, sample_rate=240.0):
     rngs.append(round(a))
   return rngs
 
-def preprocess(dataDir):
+def preprocess(dataDir, sample_rate=240.0, bpmin=0, bpmax=550, lowpass=True, highpass=True, verbose=False):
 
   path = dataDir
   list_of_files = []
@@ -49,9 +49,9 @@ def preprocess(dataDir):
   for i in range(len(list_of_files)):
 
     data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
-    wd, _ = filterWave(data)
+    wd, _ = filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass, verbose)
     waveformData.append(wd['hr'])
-    segmentIndices.append(segmentWave(wd['peaklist']))
+    segmentIndices.append(segmentWave(wd['peaklist'], sample_rate, verbose))
   return waveformData, segmentIndices
 
 def calcStats(wave):
