@@ -4,19 +4,62 @@ import numpy as np
 from statistics import *
 import heartpy as hp
 import os
+from typing import List
 
-def filterWave(data, sample_rate=240.0, bpmin=0, bpmax=550, lowpass=True, highpass=True, verbose=False):
+def filterWave(data: np.ndarray, sample_rate: float = 240.0, bpmin: float = 0, bpmax: float = 550, lowpass: bool = True, highpass: bool = True, returnPlot: List[bool] = [False, False], patPlotShow: int = 0):
+  """Filters a patient's entire waveform.
 
+  Args:
+    data: Data for a single patient's waveform
+    sample_rate: Sample rate of data collected.
+    bpmin: Min blood pressure.
+    bpmax: Max blood pressure.
+    lowpass: If True, uses a lowpass Butterworth filter on data.
+    highpass: If True, uses a highpass Butterworth filter on data.
+    returnPlot: List of Booleans. If True, returns a matplotlib plot of corresponding data. Bool 1 = unfiltered waveform. Bool 2 = filtered waveform.
+    patPlotShow: Index of patient whose data will be shown in plots
+  Returns:
+    wd: Data from process method in heartpy. See heartpy docs.
+    m: Metrics from process method in heartpy. See heartpy docs.
+    plots: list of plots generated.
+  """
   # Change values ouside possible range to min and max pulse value
   data = np.array([bpmin if i <= bpmin else (bpmax if i > bpmax else i) for i in data])
+  plots = []
+
+  if(returnPlot[0]):
+    wd, m = hp.process(hrdata=data, sample_rate=sample_rate, bpmmin=bpmin, bpmmax=bpmax)
+    ax = plt.figure(figsize=(16,7))
+    plt.plot(wd['hr'])
+    plt.xlabel("Time")
+    plt.ylabel("PWV")
+    plt.title("Pulse Wave Signal: Patient " + str(patPlotShow))
+    plots.append(ax)
+    plt.close(ax)
 
   data = hp.filter_signal(data, cutoff=15, sample_rate=sample_rate, order=4, filtertype='lowpass') if lowpass else data
   data = hp.filter_signal(data, cutoff=.01, sample_rate=sample_rate, order=4, filtertype='highpass') if highpass else data
   wd, m = hp.process(hrdata=data, sample_rate=sample_rate, bpmmin=bpmin, bpmmax=bpmax)
-  return wd, m
 
-def segmentWave(peakList, sample_rate=240.0, verbose=False):
+  if(returnPlot[1]):
+    ax1 = plt.figure(figsize=(16,7))
+    plt.plot(wd['hr'])
+    plt.xlabel("Time")
+    plt.ylabel("PWV")
+    plt.title("Pulse Wave Signal: Patient " + str(patPlotShow))
+    plots.append(ax1)
+    plt.close(ax1)
 
+  return wd, m, plots
+
+def segmentWave(peakList: List[int]):
+  """Segments waveform.
+
+  Args:
+    peakList: Peaklist returned from process method in heartpy. See heartpy docs.
+  Returns:
+    rngs: List of segment indices for waveform.
+  """
   rngs = []
   try:
     peakList.insert(0, 0)
@@ -32,8 +75,24 @@ def segmentWave(peakList, sample_rate=240.0, verbose=False):
     rngs.append(round(a))
   return rngs
 
-def preprocess(dataDir, sample_rate=240.0, bpmin=0, bpmax=550, lowpass=True, highpass=True, verbose=False):
+def preprocess(dataDir: str, sample_rate: float = 240.0, bpmin: float = 0, bpmax: float = 550, lowpass: bool = True, highpass: bool = True, returnPlot: List[bool] = [False, False, False], patPlotShow: int = 0):
+  """Preprocessing, through filtering and segmentation, of a patient's pulsewave.
 
+  Args:
+    dataDir: Directory in which data files are stored. Reqs: full file path, includes only .txt, .csv, or .mat files with the column_name 'AO' for data.
+    sample_rate: Sample rate of data collected.
+    bpmin: Min blood pressure.
+    bpmax: Max blood pressure.
+    lowpass: If True, uses a lowpass Butterworth filter on data.
+    highpass: If True, uses a highpass Butterworth filter on data.
+    returnPlot: List of Booleans. If True, returns a matplotlib plot of corresponding data. Bool 1 = unfiltered waveform. Bool 2 = filtered waveform. Bool 3 = segmented waveform.
+    patPlotShow: Index of patient whose data will be shown in plots
+
+  Returns:
+    waveformData: Pulse wave data for all patients. Each list is for one patient.
+    segmentIndices: Segementation indices for all patients. Each list is for one patient.
+    plots: list of plots generated.
+  """
   path = dataDir
   list_of_files = []
 
@@ -45,17 +104,80 @@ def preprocess(dataDir, sample_rate=240.0, bpmin=0, bpmax=550, lowpass=True, hig
     
   waveformData = [] # waveform data
   segmentIndices = [] # segmentation indices
+  plots = []
 
   for i in range(len(list_of_files)):
 
     data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
-    wd, _ = filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass, verbose)
+    wd, _, ax = filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass, returnPlot[0:2], patPlotShow) if i==patPlotShow else filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass)
+    plots = plots + ax
     waveformData.append(wd['hr'])
-    segmentIndices.append(segmentWave(wd['peaklist'], sample_rate, verbose))
-  return waveformData, segmentIndices
+    segmentIndices.append(segmentWave(wd['peaklist']))
+  
+  if(returnPlot[2]):
+    displayLen = min(len(waveformData[patPlotShow]), 4000)
+    ax = plt.figure(figsize=(16,7))
+    plt.plot(waveformData[patPlotShow][0:displayLen])
+    plt.xlabel("Time")
+    plt.ylabel("PWV")
+    plt.title("Pulse Wave Signal: Patient " + str(patPlotShow))
+    plots.append(ax)
+    plt.close(ax)
 
-def calcStats(wave):
+    ax1 = plt.figure(figsize=(16,7))
+    plt.plot(waveformData[patPlotShow][0:displayLen])
+    plt.xlabel("Time")
+    plt.ylabel("PWV")
+    plt.title("Pulse Wave Signal: Patient " + str(patPlotShow))
+    for xc in segmentIndices[patPlotShow]:
+      if(xc>displayLen):
+        break
+      plt.axvline(x=xc, color='purple', linestyle="--")
+    plots.append(ax1)
+    plt.close(ax1)
 
+  return waveformData, segmentIndices, plots
+
+def plotSegment(waveformData: List[List[float]], segmentIndices: List[List[int]], patNum: List[int] = [0], segNum: List[int] = [0]):
+  """Plots waveform segments.
+
+  Args:
+    waveformData: Pulse wave data for all patients. Each list is for one patient.
+    segmentIndices: Segementation indices for all patients. Each list is for one patient.
+    patNum: List of patients to plot.
+    segNum: List of segments to plot.
+  Returns:
+    patPlots_df: dataframe of patient and segement plots
+  """
+  patPlots = {}
+  for pat in patNum:
+    patPlots["pat"+str(pat)] = {}
+    for seg in segNum:
+      lowerB = segmentIndices[pat][seg]
+      upperB = segmentIndices[pat][seg+1]
+      wave = waveformData[pat][lowerB:upperB]
+
+      ax = plt.figure(figsize=(16,7))
+      plt.plot(wave)
+      plt.xlabel("Time")
+      plt.ylabel("PWV")
+      plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))
+      patPlots["pat"+str(pat)]["seg" + str(seg)] = ax
+      plt.close(ax)
+
+  patPlots_df = pd.DataFrame(patPlots).transpose()
+  return patPlots_df
+
+
+def calcStats(wave: List[float], verbose: bool = False):
+  """Calculates waveform stats of given wave.
+
+  Args:
+    wave: a single waveform.
+  Returns:
+    metList: list of all calculated metrics
+      can return None if a metric fails to be calculated
+  """
   #calculate metrics for each indexed wave saved in individual metric arrays
   #remove outliers, save only mean for each metric
   #append metric means to new df
@@ -140,10 +262,18 @@ def calcStats(wave):
   avg_dia = wave[dicNotch:end].mean()
   dn_dia = wave[diaP] - wave[dicNotch]
 
-  return [pp_pres,avg_sys_rise,sys_rise_area,t_sys_rise,avg_dec,t_dec,dec_area,avg_sys,slope_sys,sys_area,t_sys,avg_sys_dec,dn_sys,sys_dec_area,t_sys_dec,avg_sys_dec_nodia,avg_sys_nodia,avg_sys_rise_nodia,avg_dec_nodia,slope_dia,t_dia,avg_dia,dn_dia,avg_sys_nodia]
+  metList = [pp_pres,avg_sys_rise,sys_rise_area,t_sys_rise,avg_dec,t_dec,dec_area,avg_sys,slope_sys,sys_area,t_sys,avg_sys_dec,dn_sys,sys_dec_area,t_sys_dec,avg_sys_dec_nodia,avg_sys_nodia,avg_sys_rise_nodia,avg_dec_nodia,slope_dia,t_dia,avg_dia,dn_dia,avg_sys_nodia]
+  return metList
 
-def analyzeWave(waveformData, segmentIndices):
+def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]):
+  """Calls calcStats for every segment of every patient.
 
+  Args:
+    waveformData: Pulse wave data for all patients. Each list is for one patient.
+    segmentIndices: Segementation indices for all patients. Each list is for one patient.
+  Returns:
+    metrics: dataframe of patient metrics
+  """
   metrics = pd.DataFrame()
 
   for j in range(len(waveformData)): # loops over all of patients
