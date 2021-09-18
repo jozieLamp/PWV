@@ -5,6 +5,16 @@ from statistics import *
 import heartpy as hp
 import os
 from typing import List
+from sklearn.model_selection import train_test_split
+import sklearn as sk
+from sklearn.linear_model import LogisticRegression
+from sklearn import metrics
+from sklearn.tree import DecisionTreeClassifier
+from sklearn import svm
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.impute import SimpleImputer
+
 
 def filterWave(data: np.ndarray, sample_rate: float = 240.0, bpmin: float = 0, bpmax: float = 550, lowpass: bool = True, highpass: bool = True, returnPlot: List[bool] = [False, False], patPlotShow: int = 0):
   """Filters a patient's entire waveform.
@@ -177,9 +187,9 @@ def calcStats(wave: List[float], verbose: bool = False):
   Returns:
     metList: list of all calculated metrics
       can return None if a metric fails to be calculated
+    points: dict of indexes of 5 main points
   """
   #calculate metrics for each indexed wave saved in individual metric arrays
-  #remove outliers, save only mean for each metric
   #append metric means to new df
 
   #finding maximum, defining region for dic notch
@@ -261,9 +271,134 @@ def calcStats(wave: List[float], verbose: bool = False):
   t_dia = end - dicNotch
   avg_dia = wave[dicNotch:end].mean()
   dn_dia = wave[diaP] - wave[dicNotch]
+  #avg_dia_nodia = wave[dicNotch:end].mean() - wave[diaP] 
 
-  metList = [pp_pres,avg_sys_rise,sys_rise_area,t_sys_rise,avg_dec,t_dec,dec_area,avg_sys,slope_sys,sys_area,t_sys,avg_sys_dec,dn_sys,sys_dec_area,t_sys_dec,avg_sys_dec_nodia,avg_sys_nodia,avg_sys_rise_nodia,avg_dec_nodia,slope_dia,t_dia,avg_dia,dn_dia,avg_sys_nodia]
-  return metList
+  points = {
+      "Start": beg,
+      "Max": sysMaxi,
+      "Dic Notch": dicNotch,
+      "Dia Pressure": diaP,
+      "End": end
+  }
+    
+  metList=[pp_pres,avg_sys_rise,sys_rise_area,t_sys_rise,avg_dec,t_dec,dec_area,avg_sys,slope_sys,sys_area,t_sys,avg_sys_dec,dn_sys,sys_dec_area,t_sys_dec,avg_sys_dec_nodia,avg_sys_nodia,avg_sys_rise_nodia,avg_dec_nodia,slope_dia,t_dia,avg_dia,dn_dia,avg_sys_nodia]
+  return metList, points
+
+
+def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[int]], patNum: List[int] = [0], segNum: List[int] = [0]):
+  """Plots INTERACTIVE waveform segments.
+
+  Args:
+    waveformData: Pulse wave data for all patients. Each list is for one patient.
+    segmentIndices: Segementation indices for all patients. Each list is for one patient.
+    patNum: List of patients to plot.
+    segNum: List of segments to plot.
+  Returns:
+    patPlots_df: dataframe of patient and segement plots
+    patPoints_df: dict of 5 indexes
+  """
+  patPlots = {}
+  patPoints = {}
+  for pat in patNum:
+    patPlots["pat"+str(pat)] = {}
+    patPoints["pat"+str(pat)] = {}
+    for seg in segNum:
+      lowerB = segmentIndices[pat][seg]
+      upperB = segmentIndices[pat][seg+1]
+      wave = waveformData[pat][lowerB:upperB]
+    
+      metrics_df, points = calcStats(wave)
+      
+      plt.rcParams["figure.figsize"]=12,10
+      fig = plt.figure()
+      ax = fig.add_subplot(111)
+      
+      wav, = ax.plot(wave, '-', label='wave')
+      start, = ax.plot(points["Start"], wave[points["Start"]], 'o', label='Beg')
+      max, = ax.plot(points["Max"], wave[points["Max"]], 'o', label='Max')
+      dic, = ax.plot(points["Dic Notch"], wave[points["Dic Notch"]], 'o', label='Dic Notch')
+      dia, = ax.plot(points["Dia Pressure"], wave[points["Dia Pressure"]], 'o', label='Dia Pressure')
+      end, = ax.plot(points["End"], wave[points["End"]], 'o', label='End')
+      
+      #lte = [*range(len(wave))] 
+      #pp_pres, = ax.fill_between(lte, wave, label='pp_pres')
+      
+      avg_sys_rise, = ax.plot(np.array([0,points["Max"]]), np.array([metrics_df[1],metrics_df[1]]), label='avg_sys_rise')
+      #sys_rise_area,
+      t_sys_rise, = ax.plot(np.array([0,points["Max"]]), np.array([wave[points["Start"]],wave[points["Start"]]]), '--',label='t_sys_rise')
+      avg_dec, = ax.plot(np.array([points["Max"],points["End"]]), np.array([metrics_df[4],metrics_df[4]]), label='avg_dec')
+      t_dec, = ax.plot(np.array([points["Max"],points["End"]]), np.array([wave[points["End"]],wave[points["End"]]]), '--',label='t_sys_dec')
+      #dec_area,
+      avg_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([metrics_df[7],metrics_df[7]]), label='avg_sys')
+      slope_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([wave[points["Start"]],wave[points["Dic Notch"]]]), '-.',label='slope_sys')
+      #sys_area,
+      t_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([wave[points["Dic Notch"]],wave[points["Dic Notch"]]]), '--',label='t_sys')
+      avg_sys_dec, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([metrics_df[11],metrics_df[11]]), label='avg_sys_dec')
+      dn_sys, = ax.plot(np.array([points["Max"],points["Max"]]), np.array([wave[points["Max"]],wave[points["Dic Notch"]]]), '--', label='dn_sys')
+      #sys_dec_area,
+      t_sys_dec, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([wave[points["Dic Notch"]],wave[points["Dic Notch"]]]), '--',label='t_sys_dec')
+      avg_sys_dec_nodia, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([metrics_df[15],metrics_df[15]]), label='avg_sys_dec_nodia')
+      avg_sys_nodia, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([metrics_df[16],metrics_df[16]]), label='avg_sys_nodia')
+      avg_sys_rise_nodia, = ax.plot(np.array([0,points["Max"]]), np.array([metrics_df[17],metrics_df[17]]), label='avg_sys_rise_nodia')
+      avg_dec_nodia, = ax.plot(np.array([points["Max"], points["End"]]), np.array([metrics_df[18],metrics_df[18]]), label='avg_dec_nodia')
+      slope_dia, = ax.plot(np.array([points["Dic Notch"],points["End"]]), np.array([wave[points["Dic Notch"]],wave[points["End"]]]), '-.',label='slope_dia')
+      t_dia, = ax.plot(np.array([points["Dic Notch"],points["End"]]), np.array([wave[points["End"]],wave[points["End"]]]), '--', label='t_dia')
+      avg_dia, = ax.plot(np.array([points["Dic Notch"],points["End"]]), np.array([metrics_df[21],metrics_df[21]]), label='avg_dia')
+      dn_dia, = ax.plot(np.array([points["Dia Pressure"],points["Dia Pressure"]]), np.array([wave[points["Dia Pressure"]],wave[points["Dic Notch"]]]), '--', label='dn_dia')
+      avg_dia_nodia, = ax.plot(np.array([points["Dic Notch"],points["End"]]), np.array([metrics_df[23],metrics_df[23]]), label='avg_dia_nodia')
+      
+      legend = ax.legend(bbox_to_anchor=(1, .4))
+      plt.xlabel("Time")
+      plt.ylabel("PWV")
+      plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))
+    
+    
+      wave_leg,beg_leg,max_leg,dic_notch_leg,dia_pres_leg,end_leg,avg_sys_rise_leg,t_sys_rise_leg,avg_dec_leg,t_dec_leg,avg_sys_leg,slope_sys_leg,t_sys_leg,avg_sys_dec_leg,dn_sys_leg,t_sys_dec_leg,avg_sys_dec_nodia_leg,avg_sys_nodia_leg,avg_sys_rise_nodia_leg,avg_dec_nodia_leg,slope_dia_leg,t_dia_leg,avg_dia_leg,dn_dia_leg,avg_dia_nodia_leg = legend.get_lines()
+      wave_leg.set_picker(True)
+      wave_leg.set_pickradius(5)
+        
+
+      pickables = {}
+      pickables[wave_leg] = wave
+      
+
+      def on_pick(event):
+          leg = event.artist
+          visible = leg.get_visible()
+          visible = not visible
+          pickables[leg].set_visible(visible)
+          leg.set_visible(visible)
+          fig.canvas.draw()
+
+      plt.connect('pick_event', on_pick)    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+      
+      patPlots["pat"+str(pat)]["seg" + str(seg)] = fig
+      patPoints["pat"+str(pat)]["seg" + str(seg)] = points
+
+    
+      plt.close(fig)
+        
+
+
+
+  patPlots_df = pd.DataFrame(patPlots).transpose()
+  patPoints_df = pd.DataFrame(patPoints).transpose()
+
+  return patPlots_df, patPoints_df, metrics_df
+
+
+
 
 def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]):
   """Calls calcStats for every segment of every patient.
@@ -282,9 +417,12 @@ def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]
       lowerB = segmentIndices[j][i]
       upperB = segmentIndices[j][i+1]
       wave = waveformData[j][lowerB:upperB]
-      stats = calcStats(wave)
+      
+      #stats, _ = calcStats(wave)
 
+    
       try:
+        stats, _ = calcStats(wave)
         stats = [j] + stats
         stats = pd.DataFrame(stats).transpose()
         metrics = metrics.append(stats, ignore_index = True)
@@ -292,3 +430,92 @@ def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]
         pass
   
   return metrics
+
+def MLSplit(outcomeData: pd.DataFrame()):
+  """Splits data into testing and training sets.
+
+  Args:
+    outcomeData: Waves with metrics and outcomes.
+  Returns:
+    x_train, x_test, y_train, y_test: training and testing data
+  """
+  x = outcomeData.iloc[:,1:25]
+  y = outcomeData.iloc[:,25]
+
+  x_train, x_test, y_train, y_test = train_test_split(x, y)
+  
+  imp = SimpleImputer(missing_values=np.nan, strategy='mean')
+  imp = imp.fit(x_train)
+  x_train_imp = imp.transform(x_train)
+
+  return x_train_imp, x_test, y_train, y_test
+
+def logistic(x_train, x_test, y_train, y_test):
+  model = LogisticRegression(max_iter=4000)
+  model.fit(x_train, y_train)
+
+  y_pred = pd.Series(model.predict(x_test))
+  y_test = y_test.reset_index(drop=True)
+  z = pd.concat([y_test, y_pred], axis=1)
+  z.columns = ['True', 'Prediction']
+  accuracy = metrics.accuracy_score(y_test, y_pred)
+  precision = metrics.precision_score(y_test, y_pred)
+  recall = metrics.recall_score(y_test, y_pred)
+    
+  return z, accuracy, precision, recall
+
+def decisionTree(x_train, x_test, y_train, y_test):
+  classifier = DecisionTreeClassifier()
+  classifier.fit(x_train, y_train)
+
+  y_pred = pd.Series(classifier.predict(x_test))
+  y_test = y_test.reset_index(drop=True)
+  z = pd.concat([y_test, y_pred], axis=1)
+  z.columns = ['True', 'Prediction']
+  accuracy = metrics.accuracy_score(y_test, y_pred)
+  precision = metrics.precision_score(y_test, y_pred)
+  recall = metrics.recall_score(y_test, y_pred)
+    
+  return z, accuracy, precision, recall
+
+def svm(x_train, x_test, y_train, y_test):
+  classifier = svm.SVC()
+  classifier.fit(x_train, y_train)
+
+  y_pred = pd.Series(classifier.predict(x_test))
+  y_test = y_test.reset_index(drop=True)
+  z = pd.concat([y_test, y_pred], axis=1)
+  z.columns = ['True', 'Prediction']
+  accuracy = metrics.accuracy_score(y_test, y_pred)
+  precision = metrics.precision_score(y_test, y_pred)
+  recall = metrics.recall_score(y_test, y_pred)
+    
+  return z, accuracy, precision, recall
+
+def KNeighbors(x_train, x_test, y_train, y_test):
+  classifier = KNeighborsClassifier(n_neighbors=3)
+  classifier.fit(x_train, y_train)
+
+  y_pred = pd.Series(classifier.predict(x_test))
+  y_test = y_test.reset_index(drop=True)
+  z = pd.concat([y_test, y_pred], axis=1)
+  z.columns = ['True', 'Prediction']
+  accuracy = metrics.accuracy_score(y_test, y_pred)
+  precision = metrics.precision_score(y_test, y_pred)
+  recall = metrics.recall_score(y_test, y_pred)
+    
+  return z, accuracy, precision, recall
+
+def gaussianNB(x_train, x_test, y_train, y_test):
+  classifier = GaussianNB()
+  classifier.fit(x_train, y_train)
+
+  y_pred = pd.Series(classifier.predict(x_test))
+  y_test = y_test.reset_index(drop=True)
+  z = pd.concat([y_test, y_pred], axis=1)
+  z.columns = ['True', 'Prediction']
+  accuracy = metrics.accuracy_score(y_test, y_pred)
+  precision = metrics.precision_score(y_test, y_pred)
+  recall = metrics.recall_score(y_test, y_pred)
+    
+  return z, accuracy, precision, recall
