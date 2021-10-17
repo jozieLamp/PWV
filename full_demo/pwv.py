@@ -347,7 +347,7 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
       dn_dia, = ax.plot(np.array([points["Dia Pressure"],points["Dia Pressure"]]), np.array([wave[points["Dia Pressure"]],wave[points["Dic Notch"]]]), '--', label='dn_dia')
       avg_dia_nodia, = ax.plot(np.array([points["Dic Notch"],points["End"]]), np.array([metrics_df[23],metrics_df[23]]), label='avg_dia_nodia')
       
-      legend = ax.legend(bbox_to_anchor=(1, .4))
+      legend = ax.legend(bbox_to_anchor=(0,0))
       plt.xlabel("Time")
       plt.ylabel("PWV")
       plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))
@@ -373,15 +373,6 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
       plt.connect('pick_event', on_pick)    
     
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
       
       patPlots["pat"+str(pat)]["seg" + str(seg)] = fig
       patPoints["pat"+str(pat)]["seg" + str(seg)] = points
@@ -396,6 +387,9 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
   patPoints_df = pd.DataFrame(patPoints).transpose()
 
   return patPlots_df, patPoints_df, metrics_df
+
+
+
 
 
 
@@ -478,7 +472,7 @@ def decisionTree(x_train, x_test, y_train, y_test):
     
   return z, accuracy, precision, recall
 
-def svm(x_train, x_test, y_train, y_test):
+def sv(x_train, x_test, y_train, y_test):
   classifier = svm.SVC()
   classifier.fit(x_train, y_train)
 
@@ -519,3 +513,43 @@ def gaussianNB(x_train, x_test, y_train, y_test):
   recall = metrics.recall_score(y_test, y_pred)
     
   return z, accuracy, precision, recall
+
+
+#for hiding cells:
+from IPython.display import HTML
+import random
+
+def hide_toggle(for_next=False):
+    this_cell = """$('div.cell.code_cell.rendered.selected')"""
+    next_cell = this_cell + '.next()'
+
+    toggle_text = 'Toggle show/hide'  # text shown on toggle link
+    target_cell = this_cell  # target cell to control with toggle
+    js_hide_current = ''  # bit of JS to permanently hide code in current cell (only when toggling next cell)
+
+    if for_next:
+        target_cell = next_cell
+        toggle_text += ' next cell'
+        js_hide_current = this_cell + '.find("div.input").hide();'
+
+    js_f_name = 'code_toggle_{}'.format(str(random.randint(1,2**64)))
+
+    html = """
+        <script>
+            function {f_name}() {{
+                {cell_selector}.find('div.input').toggle();
+            }}
+
+            {js_hide_current}
+        </script>
+
+        <a href="javascript:{f_name}()">{toggle_text}</a>
+    """.format(
+        f_name=js_f_name,
+        cell_selector=target_cell,
+        js_hide_current=js_hide_current, 
+        toggle_text=toggle_text
+    )
+
+    return HTML(html)
+
