@@ -117,8 +117,13 @@ def preprocess(dataDir: str, sample_rate: float = 240.0, bpmin: float = 0, bpmax
   plots = []
 
   for i in range(len(list_of_files)):
+    
+    data = []
+    try:
+      data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
+    except:
+      data = hp.get_data(list_of_files[i], delim = ',', column_name = 'a')
 
-    data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
     wd, _, ax = filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass, returnPlot[0:2], patPlotShow) if i==patPlotShow else filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass)
     plots = plots + ax
     waveformData.append(wd['hr'])
