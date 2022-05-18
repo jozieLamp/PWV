@@ -16,11 +16,12 @@ The pipeline is intended to be used by clinicians and would exist on a device wh
 Explicitly, our tool takes in raw pulse wave data from a patient (ideally at least 2 minutes), preprocesses the data, calculate various predictive metrics, and  uses various machine learning techniques to predict heart failure state. The tool has parameters so the user can customize the process at each step. Additionally, helps visualize the pulse wave data.
   
 ## Algorithm Overview
+### Case Study Data:
+
+Our data, contained in the `Raw Data` folder, comes from a set of inpatients in the University of Virginia (UVA) Hospital's catheterization lab. There were a total of 19 patients, average to 62.8 years and 68.4% male. Of the 19, 11 patients (57.9%) were admitted for heart failure. Data was collected when patients were sitting in an upright position for between 30 seconds and 5 minutes of time.
+
 ### Preprocessing Steps:
 <img src="figures/waveFilterSeg.jpg" width="1000">
-
-The original data is contained in the `Raw Data` folder.
-The dataset is comes from a set of inpatient patients in the UVA Hospital's catheterization lab. There were a total of 19 patients with varying ages that average to 62.8 years and they were majority male (68.4%). Of the 19, 11 patients (57.9%) were admitted for heart failure. Data was collected when patients were sitting in an upright position.
 
 Preprocessing follows these steps:
 1. Converting Pulse Wave from Peripheral to Central Waveforms.
