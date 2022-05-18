@@ -20,7 +20,8 @@ Explicitly, our tool takes in raw pulse wave data from a patient (ideally at lea
 <img src="figures/waveFilterSeg.jpg" width="1000">
 
 The original data is contained in the `Raw Data` folder.
-The dataset is ...{description}
+The dataset is comes from a set of inpatient patients in the UVA Hospital's catheterization lab. There were a total of 19 patients with varying ages that average to 62.8 years and they were majority male (68.4%). Of the 19, 11 patients (57.9%) were admitted for heart failure. Data was collected when patients were sitting in an upright position.
+
 Preprocessing follows these steps:
 1. Converting Pulse Wave from Peripheral to Central Waveforms.
 2. Applying Butterworth Filter(s) (this can be controlled through pipeline settings).
