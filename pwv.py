@@ -5,7 +5,6 @@ from statistics import *
 import heartpy as hp
 import os
 from typing import List
-from sklearn.model_selection import train_test_split
 import sklearn as sk
 from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
@@ -13,7 +12,13 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.impute import SimpleImputer
+from sklearn.ensemble import BaggingClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import make_scorer
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedStratifiedKFold
+from numpy import diff
+
 
 
 def filterWave(data: np.ndarray, sample_rate: float = 240.0, bpmin: float = 0, bpmax: float = 550, lowpass: bool = True, highpass: bool = True, returnPlot: List[bool] = [False, False], patPlotShow: int = 0):
@@ -117,13 +122,8 @@ def preprocess(dataDir: str, sample_rate: float = 240.0, bpmin: float = 0, bpmax
   plots = []
 
   for i in range(len(list_of_files)):
-    
-    data = []
-    try:
-      data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
-    except:
-      data = hp.get_data(list_of_files[i], delim = ',', column_name = 'a')
 
+    data = hp.get_data(list_of_files[i], delim = ' ', column_name = 'AO')
     wd, _, ax = filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass, returnPlot[0:2], patPlotShow) if i==patPlotShow else filterWave(data, sample_rate, bpmin, bpmax, lowpass, highpass)
     plots = plots + ax
     waveformData.append(wd['hr'])
@@ -171,12 +171,18 @@ def plotSegment(waveformData: List[List[float]], segmentIndices: List[List[int]]
       lowerB = segmentIndices[pat][seg]
       upperB = segmentIndices[pat][seg+1]
       wave = waveformData[pat][lowerB:upperB]
+    
+      diff = pd.Series(wave).diff()
 
-      ax = plt.figure(figsize=(16,7))
-      plt.plot(wave)
-      plt.xlabel("Time")
-      plt.ylabel("PWV")
-      plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))
+      ax = plt.figure(figsize=(16,9))
+
+      plt.plot(wave, label='Wave')
+      plt.plot(diff, label='Differential')
+
+      plt.xlabel("Time", fontdict = {'fontsize' : 18})
+      plt.ylabel("PWV", fontdict = {'fontsize' : 18})
+      legend = ax.legend()
+
       patPlots["pat"+str(pat)]["seg" + str(seg)] = ax
       plt.close(ax)
 
@@ -194,17 +200,13 @@ def calcStats(wave: List[float], verbose: bool = False):
       can return None if a metric fails to be calculated
     points: dict of indexes of 5 main points
   """
-  #calculate metrics for each indexed wave saved in individual metric arrays
-  #append metric means to new df
+
 
   #finding maximum, defining region for dic notch
   wave = pd.Series(wave)
   sysMaxi = wave.idxmax()
   reg = wave[int(round(sysMaxi*1.05)):int(round(sysMaxi+(len(wave)*.28)))]
   diff = reg.diff()
-
-  NP = [0,0]
-
 
   #find dic notch
   ser = [0,0]
@@ -218,33 +220,22 @@ def calcStats(wave: List[float], verbose: bool = False):
         ser[1] = counter
       counter = 0
 
-
-
-  #if no dic notch found:
+  #if no dic notch found, estimate dia pressure then dic notch:
   try:
     if ser[0] == 0 or ser[1] < len(reg)*.05:
       #estimate diastolic pressure as flattest point -> highest diff
       #range for diastolic pressure:
       diaReg = diff.tail(n=round(len(diff)*.9))
       diaP = diaReg.idxmax()
-      dicN = round(mean([diaReg.idxmax(),diaReg.idxmin()]))
-      #print("NO DIC NOTCH FOUND, estimating...")
+      dicNotch = round(mean([diaReg.idxmax(),diaReg.idxmin()]))
     else:
-      dicN = ser[0]
-      if round(2*sysMaxi) > dicN+1:
-        diaP = wave[dicN+1:round(2*sysMaxi)].idxmax()
-      else:
-        diaP = dicN+1
+      dicNotch = ser[0]
+      #if round(2*sysMaxi) > dicNotch+1:
+      diaP = wave[dicNotch+1:dicNotch+1+round(.25*len(wave))].idxmax()
+      #else:
+        #diaP = dicNotch+1
   except:
     return
-
-
-  NP[0] = dicN
-  NP[1] = diaP
-
-  #saving dic notch and diastolic pressure for functions
-  dicNotch = NP[0]
-  diaP = NP[1]
 
   #beginning and end of wave
   beg = 0
@@ -276,7 +267,7 @@ def calcStats(wave: List[float], verbose: bool = False):
   t_dia = end - dicNotch
   avg_dia = wave[dicNotch:end].mean()
   dn_dia = wave[diaP] - wave[dicNotch]
-  #avg_dia_nodia = wave[dicNotch:end].mean() - wave[diaP] 
+  avg_dia_nodia = wave[dicNotch:end].mean() - wave[diaP] 
 
   points = {
       "Start": beg,
@@ -325,22 +316,15 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
       dia, = ax.plot(points["Dia Pressure"], wave[points["Dia Pressure"]], 'o', label='Dia Pressure')
       end, = ax.plot(points["End"], wave[points["End"]], 'o', label='End')
       
-      #lte = [*range(len(wave))] 
-      #pp_pres, = ax.fill_between(lte, wave, label='pp_pres')
-      
       avg_sys_rise, = ax.plot(np.array([0,points["Max"]]), np.array([metrics_df[1],metrics_df[1]]), label='avg_sys_rise')
-      #sys_rise_area,
       t_sys_rise, = ax.plot(np.array([0,points["Max"]]), np.array([wave[points["Start"]],wave[points["Start"]]]), '--',label='t_sys_rise')
       avg_dec, = ax.plot(np.array([points["Max"],points["End"]]), np.array([metrics_df[4],metrics_df[4]]), label='avg_dec')
       t_dec, = ax.plot(np.array([points["Max"],points["End"]]), np.array([wave[points["End"]],wave[points["End"]]]), '--',label='t_sys_dec')
-      #dec_area,
       avg_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([metrics_df[7],metrics_df[7]]), label='avg_sys')
       slope_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([wave[points["Start"]],wave[points["Dic Notch"]]]), '-.',label='slope_sys')
-      #sys_area,
       t_sys, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([wave[points["Dic Notch"]],wave[points["Dic Notch"]]]), '--',label='t_sys')
       avg_sys_dec, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([metrics_df[11],metrics_df[11]]), label='avg_sys_dec')
       dn_sys, = ax.plot(np.array([points["Max"],points["Max"]]), np.array([wave[points["Max"]],wave[points["Dic Notch"]]]), '--', label='dn_sys')
-      #sys_dec_area,
       t_sys_dec, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([wave[points["Dic Notch"]],wave[points["Dic Notch"]]]), '--',label='t_sys_dec')
       avg_sys_dec_nodia, = ax.plot(np.array([points["Max"],points["Dic Notch"]]), np.array([metrics_df[15],metrics_df[15]]), label='avg_sys_dec_nodia')
       avg_sys_nodia, = ax.plot(np.array([0,points["Dic Notch"]]), np.array([metrics_df[16],metrics_df[16]]), label='avg_sys_nodia')
@@ -355,14 +339,11 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
       legend = ax.legend(bbox_to_anchor=(0,0))
       plt.xlabel("Time")
       plt.ylabel("PWV")
-      plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))
-    
-    
+      plt.title("PWV: Patient " + str(pat) + ", Segment " + str(seg))    
       wave_leg,beg_leg,max_leg,dic_notch_leg,dia_pres_leg,end_leg,avg_sys_rise_leg,t_sys_rise_leg,avg_dec_leg,t_dec_leg,avg_sys_leg,slope_sys_leg,t_sys_leg,avg_sys_dec_leg,dn_sys_leg,t_sys_dec_leg,avg_sys_dec_nodia_leg,avg_sys_nodia_leg,avg_sys_rise_nodia_leg,avg_dec_nodia_leg,slope_dia_leg,t_dia_leg,avg_dia_leg,dn_dia_leg,avg_dia_nodia_leg = legend.get_lines()
       wave_leg.set_picker(True)
       wave_leg.set_pickradius(5)
         
-
       pickables = {}
       pickables[wave_leg] = wave
       
@@ -376,27 +357,16 @@ def interPlotSegment(waveformData: List[List[float]], segmentIndices: List[List[
           fig.canvas.draw()
 
       plt.connect('pick_event', on_pick)    
-    
-    
       
       patPlots["pat"+str(pat)]["seg" + str(seg)] = fig
       patPoints["pat"+str(pat)]["seg" + str(seg)] = points
-
     
       plt.close(fig)
-        
-
-
 
   patPlots_df = pd.DataFrame(patPlots).transpose()
   patPoints_df = pd.DataFrame(patPoints).transpose()
 
   return patPlots_df, patPoints_df, metrics_df
-
-
-
-
-
 
 
 def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]):
@@ -416,145 +386,115 @@ def analyzeWave(waveformData: List[List[float]], segmentIndices: List[List[int]]
       lowerB = segmentIndices[j][i]
       upperB = segmentIndices[j][i+1]
       wave = waveformData[j][lowerB:upperB]
-      
-      #stats, _ = calcStats(wave)
-
     
       try:
         stats, _ = calcStats(wave)
-        stats = [j] + stats
+        stats = [j] + [i] + stats
         stats = pd.DataFrame(stats).transpose()
         metrics = metrics.append(stats, ignore_index = True)
+        metrics = metrics.dropna()
       except:
         pass
-  
+  metrics.columns = ['patient #','wave #','pp_pres','avg_sys_rise','sys_rise_area','t_sys_rise','avg_dec','t_dec','dec_area','avg_sys','slope_sys','sys_area','t_sys','avg_sys_dec','dn_sys','sys_dec_area','t_sys_dec','avg_sys_dec_nodia','avg_sys_nodia','avg_sys_rise_nodia','avg_dec_nodia','slope_dia','t_dia','avg_dia','dn_dia','avg_dia_nodia']
+    
+
   return metrics
 
-def MLSplit(outcomeData: pd.DataFrame()):
-  """Splits data into testing and training sets.
 
-  Args:
-    outcomeData: Waves with metrics and outcomes.
-  Returns:
-    x_train, x_test, y_train, y_test: training and testing data
-  """
-  x = outcomeData.iloc[:,1:25]
-  y = outcomeData.iloc[:,25]
+def logistic(x, y):
+  classifier = LogisticRegression(max_iter=4000)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-  x_train, x_test, y_train, y_test = train_test_split(x, y)
-  
-  imp = SimpleImputer(missing_values=np.nan, strategy='mean')
-  imp = imp.fit(x_train)
-  x_train_imp = imp.transform(x_train)
-
-  return x_train_imp, x_test, y_train, y_test
-
-def logistic(x_train, x_test, y_train, y_test):
-  model = LogisticRegression(max_iter=4000)
-  model.fit(x_train, y_train)
-
-  y_pred = pd.Series(model.predict(x_test))
-  y_test = y_test.reset_index(drop=True)
-  z = pd.concat([y_test, y_pred], axis=1)
-  z.columns = ['True', 'Prediction']
-  accuracy = metrics.accuracy_score(y_test, y_pred)
-  precision = metrics.precision_score(y_test, y_pred)
-  recall = metrics.recall_score(y_test, y_pred)
-    
-  return z, accuracy, precision, recall
-
-def decisionTree(x_train, x_test, y_train, y_test):
+def decisionTree(x, y):
   classifier = DecisionTreeClassifier()
-  classifier.fit(x_train, y_train)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-  y_pred = pd.Series(classifier.predict(x_test))
-  y_test = y_test.reset_index(drop=True)
-  z = pd.concat([y_test, y_pred], axis=1)
-  z.columns = ['True', 'Prediction']
-  accuracy = metrics.accuracy_score(y_test, y_pred)
-  precision = metrics.precision_score(y_test, y_pred)
-  recall = metrics.recall_score(y_test, y_pred)
-    
-  return z, accuracy, precision, recall
-
-def sv(x_train, x_test, y_train, y_test):
+def sv(x, y):
   classifier = svm.SVC()
-  classifier.fit(x_train, y_train)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-  y_pred = pd.Series(classifier.predict(x_test))
-  y_test = y_test.reset_index(drop=True)
-  z = pd.concat([y_test, y_pred], axis=1)
-  z.columns = ['True', 'Prediction']
-  accuracy = metrics.accuracy_score(y_test, y_pred)
-  precision = metrics.precision_score(y_test, y_pred)
-  recall = metrics.recall_score(y_test, y_pred)
-    
-  return z, accuracy, precision, recall
-
-def KNeighbors(x_train, x_test, y_train, y_test):
+def KNeighbors(x, y):
   classifier = KNeighborsClassifier(n_neighbors=3)
-  classifier.fit(x_train, y_train)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-  y_pred = pd.Series(classifier.predict(x_test))
-  y_test = y_test.reset_index(drop=True)
-  z = pd.concat([y_test, y_pred], axis=1)
-  z.columns = ['True', 'Prediction']
-  accuracy = metrics.accuracy_score(y_test, y_pred)
-  precision = metrics.precision_score(y_test, y_pred)
-  recall = metrics.recall_score(y_test, y_pred)
-    
-  return z, accuracy, precision, recall
-
-def gaussianNB(x_train, x_test, y_train, y_test):
+def gaussianNB(x, y):
   classifier = GaussianNB()
-  classifier.fit(x_train, y_train)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-  y_pred = pd.Series(classifier.predict(x_test))
-  y_test = y_test.reset_index(drop=True)
-  z = pd.concat([y_test, y_pred], axis=1)
-  z.columns = ['True', 'Prediction']
-  accuracy = metrics.accuracy_score(y_test, y_pred)
-  precision = metrics.precision_score(y_test, y_pred)
-  recall = metrics.recall_score(y_test, y_pred)
-    
-  return z, accuracy, precision, recall
+def baggingClassifier(x, y):
+  classifier = BaggingClassifier()
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
 
-
-#for hiding cells:
-from IPython.display import HTML
-import random
-
-def hide_toggle(for_next=False):
-    this_cell = """$('div.cell.code_cell.rendered.selected')"""
-    next_cell = this_cell + '.next()'
-
-    toggle_text = 'Toggle show/hide'  # text shown on toggle link
-    target_cell = this_cell  # target cell to control with toggle
-    js_hide_current = ''  # bit of JS to permanently hide code in current cell (only when toggling next cell)
-
-    if for_next:
-        target_cell = next_cell
-        toggle_text += ' next cell'
-        js_hide_current = this_cell + '.find("div.input").hide();'
-
-    js_f_name = 'code_toggle_{}'.format(str(random.randint(1,2**64)))
-
-    html = """
-        <script>
-            function {f_name}() {{
-                {cell_selector}.find('div.input').toggle();
-            }}
-
-            {js_hide_current}
-        </script>
-
-        <a href="javascript:{f_name}()">{toggle_text}</a>
-    """.format(
-        f_name=js_f_name,
-        cell_selector=target_cell,
-        js_hide_current=js_hide_current, 
-        toggle_text=toggle_text
-    )
-
-    return HTML(html)
-
+def randomForestClassifier(x, y):
+  classifier = RandomForestClassifier(n_estimators=1000)
+  cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=1)
+  acc_scores = cross_val_score(classifier, x, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
+  accuracy = mean(acc_scores)
+  prec_scores = cross_val_score(classifier, x, y, scoring='precision', cv=cv, n_jobs=-1, error_score='raise')
+  precision = mean(prec_scores)
+  sens_scores = cross_val_score(classifier, x, y, scoring='recall', cv=cv, n_jobs=-1, error_score='raise')
+  sensitivity = mean(sens_scores)
+  scoring = make_scorer(metrics.recall_score, pos_label=0)
+  spec_scores = cross_val_score(classifier, x, y, scoring=scoring, cv=cv, n_jobs=-1, error_score='raise')
+  specificity = mean(spec_scores)
+  return accuracy, precision, sensitivity, specificity
