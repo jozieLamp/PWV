@@ -1,4 +1,4 @@
-# _PWV-HOP_: PWV-Heart failure Outcomes and Phenotypes
+# _PWV-HOP:_ PWV-Heart failure Outcomes and Phenotypes
 ### Towards Characterizing Heart Failure Outcomes and Phenotypes Using Pulse Wave Velocity
 
 *Kasra Lekan<sup>1</sup>, Amit Vallabh<sup>1</sup>, Josephine Lamp<sup>1</sup>, Lu Feng<sup>1</sup>, Sula Mazimba<sup>2</sup>*  
