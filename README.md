@@ -1,19 +1,21 @@
-# PWV Pipeline
-### A Pipeline for Characterizing Pulse Wave Velocity Signal Phenotypes in Heart Failure
+# _PWV-HOP_: PWV-Heart failure Outcomes and Phenotypes
+### Towards Characterizing Heart Failure Outcomes and Phenotypes Using Pulse Wave Velocity
 
 *Kasra Lekan<sup>1</sup>, Amit Vallabh<sup>1</sup>, Josephine Lamp<sup>1</sup>, Lu Feng<sup>1</sup>, Sula Mazimba<sup>2</sup>*  
 <sup>1</sup>Department of Computer Science, University of Virginia, Charlottesville, VA, USA  
 <sup>2</sup>Department of Cardiovascular Medicine, University of Virginia, Charlottesville, VA, USA  
 
 -------
-**Core Code Repository: https://github.com/jozieLamp/PWV
 
 ## Project Description:  
 <img src="figures/pipeline.png" width="800">
 
-This pipeline is an open source data processing and machine learning tool for using pulse waves to predict heart failure.
-The pipeline is intended to be used by clinicians and would exist on a device which combines basic compute (perhaps via an Raspberry Pi) and an oximeter.
-Explicitly, our tool takes in raw pulse wave data from a patient (ideally at least 2 minutes), preprocesses the data, calculate various predictive metrics, and  uses various machine learning techniques to predict heart failure state. The tool has parameters so the user can customize the process at each step. Additionally, helps visualize the pulse wave data.
+_PWV-HOP_ (**PWV**-**H**eart failure **O**utcomes and **P**henotypes) is an open source data and machine learning pipeline to characterize HF outcomes and phenotypes using Pulse Wave Velocity signals. _PWV-HOP_ consists of a pulse oximeter clipped to a patient’s finger that collects and wirelessly sends PPG signals to a Raspberry Pi device that runs the data processing and machine learning pipeline. The pipeline outputs personalized indications about the patient HF state. It is our intention that _PWV-HOP_ is deployed in an outpatient setting, in which PWV signals are collected locally by the patient using our device and then shared with a clinician to analyze PWV phenotypes and provide an understanding of the overall patient HF state. 
+
+An overview of the pipeline and device is shown in the figure above. A pulse oximeter clipped to a patient’s finger collects PPG signals and wirelessly sends them to our device, which consists of a Raspberry Pi running the data processing and machine learning pipeline. The collected signals are processed through the pipeline and the pipeline outputs an indication about the patient HF state, as well as a potential characterization of the heart failure
+phenotype(s). The pipeline has three main phases: In the first phase, Preprocessing, the PPG signals are converted into PWV waves, filtered to reduce noise and segmented into individual pulse waveforms. Next, the Metric Calculation phase identifies the five key indices of each wave, estimates any miss-
+ing indices and calculates a set of metrics that characterize the wave. Finally, the last phase completes the machine learning prediction for each of the waveforms, aggregates the resulting predictions and outputs the results (e.g., information about the heart failure state and phenotype). An important quality of the pipeline is built-in error handling and processing, such that the device can still be used to make predictions and analyze PWV phenotypes, even when the data may be variable or noisy. 
+
   
 ## Algorithm Overview
 ### Case Study Data:
