@@ -23,7 +23,7 @@ ing indices and calculates a set of metrics that characterize the wave. Finally,
 Our data, contained in the `Raw Data` folder, comes from a set of inpatients in the University of Virginia (UVA) Hospital's catheterization lab. There were a total of 19 patients, average to 62.8 years and 68.4% male. Of the 19, 11 patients (57.9%) were admitted for heart failure. Data was collected when patients were sitting in an upright position for between 30 seconds and 5 minutes of time.
 
 ### Preprocessing Steps:
-<img src="figures/waveFilterSeg.jpg" width="1000">
+<img src="figures/waveFilterSeg.png" width="1000">
 
 Preprocessing follows these steps:
 1. Converting Pulse Wave from Peripheral to Central Waveforms.
